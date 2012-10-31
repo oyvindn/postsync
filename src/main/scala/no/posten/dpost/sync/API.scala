@@ -37,7 +37,7 @@ object API {
 
   implicit val formats = DefaultFormats // Brings in default date formats etc.
 
-  val baseUrl = "http://localhost:8080"
+  val baseUrl = "http://localhost:9090/post"
   lazy val authUrl = baseUrl + "/api/private/passwordauth"
   lazy val authLink = Link(authUrl)
   lazy val privateEntryUrl = baseUrl + "/api/private"
