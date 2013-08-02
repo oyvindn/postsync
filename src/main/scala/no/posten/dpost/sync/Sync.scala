@@ -12,6 +12,7 @@ import org.apache.commons.io.FileUtils
 import java.io.File
 import scala.io.Source
 import API._
+import no.posten.dpost.sync.OAuth.AccessToken
 
 object Sync {
 
@@ -30,9 +31,9 @@ object Sync {
   import net.liftweb.json._
   import net.liftweb.json.Serialization.{ read, write }
 
-  case class SyncItem(id: String, filename: String, lastUpdated: Long)
+  case class SyncItem(id: String, filename: String, downloadLink: Link, lastUpdated: Long)
   object SyncItem {
-    def apply(doc: Document): SyncItem = SyncItem(doc.id, doc.filename, System.currentTimeMillis)
+    def apply(doc: Document): SyncItem = SyncItem(doc.id, doc.filename, doc.downloadLink, System.currentTimeMillis)
   }
 
   def writeSyncFile(syncFile: File, content: List[SyncItem]) = {
@@ -58,11 +59,11 @@ object Sync {
     }
   }
 
-  def download(folder: File, syncData: List[SyncItem]): List[SyncItem] = {
+  def download(folder: File, syncData: List[SyncItem], accessToken: AccessToken): List[SyncItem] = {
     syncData.filter { item =>
       val file = new File(folder, item.filename)
       if (!file.exists) {
-        API.download(Link(item.id), file).isSuccess
+        API.download(item.downloadLink, file, accessToken).isSuccess
       } else {
         true
       }
@@ -75,9 +76,9 @@ object Sync {
     otherFiles.filterNot(f => ignore.contains(f.getName))
   }
 
-  def upload(link: Link, token: String, files: List[File]): List[SyncItem] = files.flatMap { file =>
-    val upload = API.upload(link, token, removeSuffix(file.getName), file)
-    upload fold (_ => None, l => Some(SyncItem(l, file.getName, System.currentTimeMillis)))
+  def upload(link: Link, token: String, files: List[File], accessToken: AccessToken): List[SyncItem] = files.flatMap { file =>
+    val upload = API.upload(link, token, removeSuffix(file.getName), file, accessToken)
+    upload fold (_ => None, l => Some(SyncItem(l, file.getName, null, System.currentTimeMillis)))
   }
 
   def removeSuffix(str: String) = str.substring(0, str.lastIndexOf("."))

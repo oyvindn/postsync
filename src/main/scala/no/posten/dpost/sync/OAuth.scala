@@ -12,34 +12,37 @@ import net.liftweb.json.{DefaultFormats, JsonParser}
 import scalaz.{Failure, Success}
 
 object OAuthSettings {
-  final val ClientId = "..."
-  final val Secret = "..."
+  final val ClientId = "***"
+  final val Secret = "***"
 
-  final val RedirectUrl = "https://www.digipost.no"
+  final val RedirectUrl = "https://qa.digipost.no"
   lazy val AuthorizeUrl = API.baseUrl + "/api/oauth/authorize/new?response_type=code&client_id=" + ClientId + "&state=" + Cryptography.randomNonce
   lazy val AccessTokenUrl = API.baseUrl + "/api/oauth/accesstoken"
 }
 
-object OAuth extends App {
+object OAuthTest extends App {
+  OAuth.authenticate()
+}
+
+object OAuth {
 
   implicit val formats = DefaultFormats
 
-  class Token
-  case class AccessToken(access_token: String, refresh_token: String, expires_in: String, token_type: String, id_token: Option[String])
+  case class AccessToken(access_token: String, refresh_token: String, expires_in: String, token_type: String, id_token: Option[String]) {
+    def refreshToken = RefreshToken(refresh_token)
+  }
   case class IdToken(aud: String, exp: String, user_id: String, iss: String, nonce: String)
+  class Token
   case class RefreshToken(value: String) extends Token
   case class AuthorisationCodeToken(value: String) extends Token
 
   val http = new Http with thread.Safety
 
-  Browser.openUrl(OAuthSettings.AuthorizeUrl)
-
-  val code = JOptionPane.showInputDialog("OAuth code from server")
-  val initialAccessToken = init(AuthorisationCodeToken(code))
-  println(initialAccessToken)
-  val refreshedAccessToken = refreshAccessToken(RefreshToken(initialAccessToken.refresh_token))
-  println(refreshedAccessToken)
-
+  def authenticate() = {
+    Browser.openUrl(OAuthSettings.AuthorizeUrl)
+    val code = JOptionPane.showInputDialog("OAuth code from server")
+    init(AuthorisationCodeToken(code))
+  }
 
   def init(token: AuthorisationCodeToken) = fetchAccessToken(token)
 
@@ -59,7 +62,6 @@ object OAuth extends App {
 
     val result = Control.trap {
       http(url(OAuthSettings.AccessTokenUrl) << grantParameters ++ defaultParams  <:< headers >- { json =>
-        println(json)
         JsonParser.parse(json).extract[AccessToken]
       })
     }

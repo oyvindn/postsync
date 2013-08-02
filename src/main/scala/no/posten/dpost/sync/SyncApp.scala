@@ -12,7 +12,7 @@ import API._
 object SyncApp extends App {
   def getMessages(account: Account, rel: String) = {
     val documentsLink = account.link(rel).get
-    GET[Documents](documentsLink) map (_.document)
+    GET[Documents](documentsLink, accessToken) map (_.document)
   }
 
   val syncFolder = new File("/tmp/sync")
@@ -21,9 +21,10 @@ object SyncApp extends App {
   if (!syncFile.exists) syncFile.createNewFile()
   val localSyncData = readSyncFile(syncFile)
 
+  val accessToken = OAuth.authenticate()
+
   val entryPointResult = for {
-    _ <- authenticate("18118500008", "Qwer1234")
-    entryPoint <- GET[EntryPoint](privateEntryLink)
+    entryPoint <- GET[EntryPoint](privateEntryLink, accessToken)
   } yield entryPoint
 
   val entryPoint = entryPointResult.fold(err => sys.error(err), identity)
@@ -38,12 +39,12 @@ object SyncApp extends App {
   val deleted = delete(syncFolder, deletedRemote)
   val localSyncDataAfterDelete = localSyncData -- deleted
   val newRemote = findItemsNotIn(remoteSyncData, localSyncDataAfterDelete)
-  val downloaded = Sync.download(syncFolder, newRemote)
+  val downloaded = Sync.download(syncFolder, newRemote, accessToken)
   val localSyncDataAfterDownload = localSyncDataAfterDelete ++ downloaded
   val newFiles = findFilesNotIn(syncFolder, localSyncDataAfterDownload, List(".sync", ".DS_Store"))
 
   val uploadLink = entryPoint.primaryAccount.link("upload_document").get
-  val uploadedFiles = Sync.upload(uploadLink, entryPoint.csrfToken, newFiles)
+  val uploadedFiles = Sync.upload(uploadLink, entryPoint.csrfToken, newFiles, accessToken)
   val localSyncDataAfterUpload = localSyncDataAfterDownload ++ uploadedFiles
 
   writeSyncFile(syncFile, localSyncDataAfterUpload)
