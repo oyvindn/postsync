@@ -1,15 +1,8 @@
 package no.posten.dpost.sync
 
-import java.awt.Desktop
-import java.net.URI
-import javax.crypto
-import crypto.spec.SecretKeySpec
-import java.util.UUID
-import javax.swing.JOptionPane
-import dispatch.{url, thread, Http}
-import org.apache.commons.codec.binary.Base64
-import net.liftweb.json.{DefaultFormats, JsonParser}
-import scalaz.{Failure, Success}
+object OAuthTest extends App {
+  val accessToken = OAuth.authenticate()
+}
 
 object OAuthSettings {
   final val ClientId = "***"
@@ -20,11 +13,11 @@ object OAuthSettings {
   lazy val AccessTokenUrl = API.baseUrl + "/api/oauth/accesstoken"
 }
 
-object OAuthTest extends App {
-  OAuth.authenticate()
-}
-
 object OAuth {
+  import dispatch.{url, thread, Http}
+  import net.liftweb.json.{DefaultFormats, JsonParser}
+  import scalaz.{Failure, Success}
+  import javax.swing.JOptionPane
 
   implicit val formats = DefaultFormats
 
@@ -32,29 +25,28 @@ object OAuth {
     def refreshToken = RefreshToken(refresh_token)
   }
   case class IdToken(aud: String, exp: String, user_id: String, iss: String, nonce: String)
-  class Token
+  sealed trait Token
   case class RefreshToken(value: String) extends Token
   case class AuthorisationCodeToken(value: String) extends Token
 
   val http = new Http with thread.Safety
 
-  def authenticate() = {
+  def authenticate(): AccessToken = {
     Browser.openUrl(OAuthSettings.AuthorizeUrl)
     val code = JOptionPane.showInputDialog("OAuth code from server")
-    init(AuthorisationCodeToken(code))
+    fetchInitialAccessToken(AuthorisationCodeToken(code))
   }
 
-  def init(token: AuthorisationCodeToken) = fetchAccessToken(token)
-
+  def fetchInitialAccessToken(token: AuthorisationCodeToken) = fetchAccessToken(token)
   def refreshAccessToken(token: RefreshToken) = fetchAccessToken(token)
 
   private def fetchAccessToken(token: Token): AccessToken = {
-    val authentication = new String(Base64.encodeBase64((OAuthSettings.ClientId + ":" + OAuthSettings.Secret).getBytes))
+    val authentication = Cryptography.encodeBase64(OAuthSettings.ClientId + ":" + OAuthSettings.Secret)
     val nonce = Cryptography.randomNonce
 
     val grantParameters = token match {
-      case AuthorisationCodeToken(code) => Seq("grant_type" -> "code", "code" -> code)
-      case RefreshToken(token) =>  Seq("grant_type" -> "refresh_token", "refresh_token" -> token)
+      case AuthorisationCodeToken(authCode) => Seq("grant_type" -> "code", "code" -> authCode)
+      case RefreshToken(refreshToken) =>  Seq("grant_type" -> "refresh_token", "refresh_token" -> refreshToken)
     }
 
     val defaultParams = Seq("redirect_uri" -> OAuthSettings.RedirectUrl, "nonce" -> nonce)
@@ -73,7 +65,7 @@ object OAuth {
 
     token match {
       case AuthorisationCodeToken(_) => verifyInitialAccessToken(accessToken, nonce)
-      case RefreshToken(_) => accessToken //TODO: check nonce?
+      case RefreshToken(_) => accessToken
     }
 
   }
@@ -92,7 +84,7 @@ object OAuth {
 
     verify(idTokenHash, Cryptography.signWithHmacSha256(idTokenValue, OAuthSettings.Secret), "id_token")
 
-    val decodedIdTokenValue = new String(Base64.decodeBase64(idTokenValue))
+    val decodedIdTokenValue = Cryptography.decodeBase64(idTokenValue)
     val idTokenObject = JsonParser.parse(decodedIdTokenValue).extract[IdToken]
 
     verify(OAuthSettings.ClientId, idTokenObject.aud, "audience")
@@ -103,6 +95,11 @@ object OAuth {
 }
 
 object Cryptography {
+  import javax.crypto
+  import crypto.spec.SecretKeySpec
+  import java.util.UUID
+  import org.apache.commons.codec.binary.Base64
+
   def signWithHmacSha256(tokenValue: String, secret: String) = {
     val HmacSHA256 = "HmacSHA256"
     val key = new SecretKeySpec(secret.getBytes, HmacSHA256)
@@ -112,10 +109,16 @@ object Cryptography {
     new String(Base64.encodeBase64(mac.doFinal(tokenValue.getBytes)))
   }
 
+  def encodeBase64(value: String) = new String(Base64.encodeBase64(value.getBytes))
+  def decodeBase64(encoded: String) = new String(Base64.decodeBase64(encoded))
+
   def randomNonce = UUID.randomUUID.toString
 }
 
 object Browser {
+  import java.awt.Desktop
+  import java.net.URI
+
   def openUrl(url: String) {
     if (!java.awt.Desktop.isDesktopSupported) sys.error("Desktop not suported")
 
